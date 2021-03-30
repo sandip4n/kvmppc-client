@@ -19,6 +19,35 @@
 #include <sys/types.h>
 #include <linux/kvm.h>
 
+#define PPC_INST_ADD			0x7c000214
+#define PPC_INST_ADDI			0x38000000
+#define PPC_INST_ADDIS			0x3c000000
+#define PPC_INST_BRANCH			0x48000000
+#define PPC_INST_NOP			0x60000000
+#define PPC_INST_ORI			0x60000000
+#define PPC_INST_ORIS			0x64000000
+
+#define ___PPC_RA(a)			(((a) & 0x1f) << 16)
+#define ___PPC_RB(b)			(((b) & 0x1f) << 11)
+#define ___PPC_RC(c)			(((c) & 0x1f) << 6)
+#define ___PPC_RS(s)			(((s) & 0x1f) << 21)
+#define ___PPC_RT(t)			___PPC_RS(t)
+#define ___PPC_LI(i)			(((i) & 0xffffff) << 2)
+#define ___PPC_AA(i)			(((i) & 0x1) << 1)
+#define ___PPC_LK(i)			((i) & 0x1)
+#define ___PPC_SI(i)			((i) & 0xffff)
+#define ___PPC_UI(i)			___PPC_SI(i)
+
+#define PPC_RAW_ADD(t, a, b)		(PPC_INST_ADD | ___PPC_RT(t) | ___PPC_RA(a) | ___PPC_RB(b))
+#define PPC_RAW_ADDI(d, a, i)		(PPC_INST_ADDI | ___PPC_RT(d) | ___PPC_RA(a) | ___PPC_SI(i))
+#define PPC_RAW_LI(r, i)		PPC_RAW_ADDI(r, 0, i)
+#define PPC_RAW_ADDIS(d, a, i)		(PPC_INST_ADDIS | ___PPC_RT(d) | ___PPC_RA(a) | ___PPC_SI(i))
+#define PPC_RAW_LIS(r, i)		PPC_RAW_ADDIS(r, 0, i)
+#define PPC_RAW_BRANCH(i, a, l)		(PPC_INST_BRANCH | ___PPC_LI(i) | ___PPC_AA(a) | ___PPC_LK(l))
+#define PPC_RAW_NOP()			(PPC_INST_NOP)
+#define PPC_RAW_ORI(d, a, i)		(PPC_INST_ORI | ___PPC_RA(d) | ___PPC_RS(a) | ___PPC_UI(i))
+#define PPC_RAW_ORIS(d, a, i)		(PPC_INST_ORIS | ___PPC_RA(d) | ___PPC_RS(a) | ___PPC_UI(i))
+
 unsigned long pgsize, vcpumsize;
 struct kvm_regs vmregs;
 struct kvm_run *vmrun;
