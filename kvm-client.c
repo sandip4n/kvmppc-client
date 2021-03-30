@@ -136,8 +136,12 @@ int main(int argc, char **argv)
 	syscall_assert(vmmem == MAP_FAILED, __FILE__, __LINE__, "mmap");
 
 	for (i = 0; i < pgsize / sizeof(unsigned int); i++)
-		((unsigned int *) vmmem)[i] = 0x60000000; /* nop */
-	((unsigned int *) vmmem)[i - 1] = 0x48000000;     /* b . */
+		((unsigned int *) vmmem)[i] = PPC_RAW_NOP();
+
+	((unsigned int *) vmmem)[0] = PPC_RAW_ORIS(13, 13, 0xdead);
+	((unsigned int *) vmmem)[1] = PPC_RAW_ORI(14, 14, 0xbeef);
+	((unsigned int *) vmmem)[2] = PPC_RAW_ADD(15, 13, 14);
+	((unsigned int *) vmmem)[i - 1] = PPC_RAW_BRANCH(0, 0, 0);
 
 	memset(&vmmreg, 0, sizeof(struct kvm_userspace_memory_region));
 	vmmreg.slot = 0;
@@ -174,9 +178,6 @@ int main(int argc, char **argv)
 
 	memset(&vmregs, 0, sizeof(struct kvm_regs));
 	vmregs.msr = (1UL << 63) | (1UL << 0); /* sf, le only */
-	vmregs.gpr[14] = 0xdead;
-	vmregs.gpr[15] = 0xbeef;
-	vmregs.gpr[16] = 0x0;
 	vmregs.pc = 0x10000;
 
 	printf("kvm pvr = 0x%08x\n", vmsregs.pvr);
