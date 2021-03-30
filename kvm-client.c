@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <assert.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include <sys/mman.h>
@@ -17,6 +18,12 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <linux/kvm.h>
+
+unsigned long pgsize, vcpumsize;
+struct kvm_regs vmregs;
+struct kvm_run *vmrun;
+int kvmfd, vcpufd;
+void *vmmem;
 
 void syscall_assert(bool cond, char *file, int line, char *name)
 {
@@ -27,16 +34,43 @@ void syscall_assert(bool cond, char *file, int line, char *name)
 	}
 }
 
+void kvm_show_registers(void)
+{
+	int ret, i;
+
+	ret = ioctl(vcpufd, KVM_GET_REGS, &vmregs);
+	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
+
+	for (i = 0; i < sizeof(vmregs.gpr) / sizeof(vmregs.gpr[0]); i++)
+		printf("kvm regs gpr[%02d] = 0x%016lx\n", i, vmregs.gpr[i]);
+	printf("kvm regs pc  = 0x%016lx\n", vmregs.pc);
+	printf("kvm regs cr  = 0x%016lx\n", vmregs.cr);
+	printf("kvm regs ctr = 0x%016lx\n", vmregs.ctr);
+	printf("kvm regs lr  = 0x%016lx\n", vmregs.lr);
+	printf("kvm regs xer = 0x%016lx\n", vmregs.xer);
+}
+
+void sigint_handler(int signum, siginfo_t *sinfo, void *ctx)
+{
+	/* FIXME unsafe to call printf from a signal handler */
+	printf("program interrupted\n");
+	kvm_show_registers();
+
+	munmap(vmrun, vcpumsize);
+	munmap(vmmem, pgsize);
+	close(vcpufd);
+	close(kvmfd);
+
+	exit(EXIT_SUCCESS);
+}
+
 int main(int argc, char **argv)
 {
 	struct kvm_userspace_memory_region vmmreg;
-	int kvmfd, vmfd, vcpufd, ret, i;
-	unsigned long pgsize, vcpumsize;
+	struct sigaction sigint_action;
 	struct kvm_enable_cap kvmcap;
 	struct kvm_sregs vmsregs;
-	struct kvm_regs vmregs;
-	struct kvm_run *vmrun;
-	void *vmmem;
+	int vmfd, ret, i;
 
 	kvmfd = open("/dev/kvm", O_RDWR | O_CLOEXEC);
 	syscall_assert(kvmfd < 0, __FILE__, __LINE__, "open");
@@ -111,6 +145,15 @@ int main(int argc, char **argv)
 	ret = ioctl(vcpufd, KVM_SET_REGS, &vmregs);
 	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
 
+	sigint_action.sa_handler = 0;
+	sigint_action.sa_sigaction = sigint_handler;
+	ret = sigprocmask(SIG_SETMASK, 0, &sigint_action.sa_mask);
+	syscall_assert(ret < 0, __FILE__, __LINE__, "sigprocmask");
+	sigint_action.sa_flags = SA_SIGINFO;
+	sigint_action.sa_restorer = 0;
+	ret = sigaction(SIGINT, &sigint_action, NULL);
+	syscall_assert(ret < 0, __FILE__, __LINE__, "sigaction");
+
 	do {
 		ret = ioctl(vcpufd, KVM_RUN, NULL);
 
@@ -140,14 +183,7 @@ int main(int argc, char **argv)
 		}
 	} while (true);
 
-	ret = ioctl(vcpufd, KVM_GET_REGS, &vmregs);
-	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
-
-	printf("kvm regs gpr[14] = 0x%016lx\n", vmregs.gpr[14]);
-	printf("kvm regs gpr[15] = 0x%016lx\n", vmregs.gpr[15]);
-	printf("kvm regs gpr[16] = 0x%016lx\n", vmregs.gpr[16]);
-	printf("kvm regs pc = 0x%016lx\n", vmregs.pc);
-
+	kvm_show_registers();
 	munmap(vmrun, vcpumsize);
 	munmap(vmmem, pgsize);
 	close(vcpufd);
