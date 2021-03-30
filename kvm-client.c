@@ -25,11 +25,20 @@ struct kvm_run *vmrun;
 int kvmfd, vcpufd;
 void *vmmem;
 
+void support_assert(bool cond, char *file, int line, char *name)
+{
+	if (cond) {
+		fprintf(stderr, "error: %s:%d: %s is not supported\n",
+			file, line, name);
+		exit(EXIT_FAILURE);
+	}
+}
+
 void syscall_assert(bool cond, char *file, int line, char *name)
 {
 	if (cond) {
-		fprintf(stderr, "%s:%d: %s() failed: %s\n", file, line, name,
-			strerror(errno));
+		fprintf(stderr, "error: %s:%d: %s() failed: %s\n",
+			file, line, name, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 }
@@ -82,10 +91,12 @@ int main(int argc, char **argv)
 	ret = ioctl(kvmfd, KVM_CHECK_EXTENSION, KVM_CAP_USER_MEMORY);
 	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
 	printf("kvm user memory capability = %s\n", ret ? "yes" : "no");
+	support_assert(!ret, __FILE__, __LINE__, "KVM_CAP_USER_MEMORY");
 
 	ret = ioctl(kvmfd, KVM_CHECK_EXTENSION, KVM_CAP_PPC_PAPR);
 	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
 	printf("kvm papr capability = %s\n", ret ? "yes" : "no");
+	support_assert(!ret, __FILE__, __LINE__, "KVM_CAP_PPC_PAPR");
 
 	vmfd = ioctl(kvmfd, KVM_CREATE_VM, KVM_VM_PPC_HV);
 	syscall_assert(vmfd < 0, __FILE__, __LINE__, "ioctl");
