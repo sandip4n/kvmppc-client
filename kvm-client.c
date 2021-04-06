@@ -19,6 +19,16 @@
 #include <sys/types.h>
 #include <linux/kvm.h>
 
+#define MSR_SF				63	/* 64-bit Mode */
+#define MSR_HV				60	/* Hypervisor State */
+#define MSR_PR				14	/* Problem State */
+#define MSR_IR				5 	/* Instruction Relocate */
+#define MSR_DR				4 	/* Data Relocate */
+#define MSR_LE				0 	/* Little-Endian Mode */
+
+#define LPCR_ILE			25	/* Interrupt Little-Endian */
+#define LPCR_EVIRT			21	/* Enhanced Virtualization */
+
 #define PPC_INST_ADD			0x7c000214
 #define PPC_INST_ADDI			0x38000000
 #define PPC_INST_ADDIS			0x3c000000
@@ -108,6 +118,8 @@ int main(int argc, char **argv)
 	struct sigaction sigint_action;
 	struct kvm_enable_cap kvmcap;
 	struct kvm_sregs vmsregs;
+	struct kvm_one_reg vmreg;
+	unsigned long lpcr;
 	int vmfd, ret, i;
 
 	kvmfd = open("/dev/kvm", O_RDWR | O_CLOEXEC);
@@ -177,14 +189,24 @@ int main(int argc, char **argv)
 	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
 
 	memset(&vmregs, 0, sizeof(struct kvm_regs));
-	vmregs.msr = (1UL << 63) | (1UL << 0); /* sf, le only */
+	vmregs.msr = (1UL << MSR_SF) | (1UL << MSR_IR) | (1UL << MSR_DR) | (1UL << MSR_LE);
 	vmregs.pc = 0x10000;
-
-	printf("kvm pvr = 0x%08x\n", vmsregs.pvr);
-	printf("kvm msr = 0x%016lx\n", vmregs.msr);
 
 	ret = ioctl(vcpufd, KVM_SET_REGS, &vmregs);
 	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
+
+	memset(&vmreg, 0, sizeof(struct kvm_one_reg));
+	vmreg.id = KVM_REG_PPC_LPCR;
+	vmreg.addr = (unsigned long) &lpcr;
+	ret = ioctl(vcpufd, KVM_GET_ONE_REG, &vmreg);
+	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
+	lpcr |= (1UL << LPCR_ILE) | (1UL << LPCR_EVIRT);
+	ret = ioctl(vcpufd, KVM_SET_ONE_REG, &vmreg);
+	syscall_assert(ret < 0, __FILE__, __LINE__, "ioctl");
+
+	printf("kvm pvr = 0x%08x\n", vmsregs.pvr);
+	printf("kvm msr = 0x%016lx\n", vmregs.msr);
+	printf("kvm lpcr = 0x%016lx\n", lpcr);
 
 	sigint_action.sa_handler = 0;
 	sigint_action.sa_sigaction = sigint_handler;
